@@ -1,0 +1,662 @@
+---
+title: "Gym Members EDA"
+author: "Bartosz Tasak"
+date: "2024-11-18"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+## Wprowadznie
+
+Dane pochodzą ze strony [https://www.kaggle.com/datasets/valakhorasani/gym-members-exercise-dataset.](https://www.kaggle.com/datasets/valakhorasani/gym-members-exercise-dataset) Zostały pobrane w formacie .csv
+
+Ten zbiór danych zawiera szczegółowe informacje o ćwiczeniach wykonywanych przez osoby korzystające z siłowni, ich cechach fizycznych oraz poziomie sprawności. Obejmuje 973 próbki, które zawierają takie dane, jak tętno, liczba spalonych kalorii i czas trwania treningu. Dodatkowo, dla każdej osoby uwzględniono dane demograficzne oraz poziom doświadczenia. Dzięki temu możliwa jest wszechstronna analiza trendów treningowych.
+
+### Pakiety, których będę używał
+
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(visdat)
+library(ggplot2)
+library(dplyr)
+library(mice)
+library(corrplot)
+```
+
+### Dane
+
+```{r message=FALSE, warning=FALSE}
+dane <- read_csv("gym_members_exercise_tracking.csv")
+```
+
+### Zmienne
+
+`Age`: Wiek osoby ćwiczącej na siłowni.
+
+`Gender`: Płeć osoby ćwiczącej na siłowni (mężczyzna lub kobieta).
+
+`Weight (kg)`: Waga osoby ćwiczącej w kilogramach.
+
+`Height (m):` Wzrost osoby ćwiczącej w metrach.
+
+`Max_BPM:` Maksymalne tętno (uderzenia na minutę) podczas sesji treningowych.
+
+`Avg_BPM:` Średnie tętno podczas sesji treningowych.
+
+`Resting_BPM`: Tętno w spoczynku przed treningiem.
+
+`Session_Duration (hours):` Czas trwania każdej sesji treningowej w godzinach.
+
+`Calories_Burned:` Całkowita liczba spalonych kalorii podczas każdej sesji.
+
+`Workout_Type:` Rodzaj wykonywanego treningu (np. Cardio, Strength, Yoga, HIIT).
+
+`Fat_Percentage:` Procent tkanki tłuszczowej osoby ćwiczącej.
+
+`Water_Intake (liters)`: Dzienne spożycie wody podczas treningów.
+
+`Workout_Frequency (days/week):` Liczba sesji treningowych w tygodniu.
+
+`Experience_Level:` Poziom doświadczenia, od początkującego (1) do eksperta (3).
+
+`BMI:` Wskaźnik masy ciała, obliczany na podstawie wzrostu i wagi. (kg/m2)
+
+## Przyjrzyjmy się danym
+
+### Sprawdzenie początkowych wartości w zbiorze
+
+```{r}
+print(head(dane), width = Inf)
+```
+
+### Sprawdzenie końcowych wartości w zbiorze
+
+```{r}
+print(tail(dane),width=Inf) 
+```
+
+### Sprawdzenie struktury pliku
+
+```{r}
+str(dane)
+```
+
+### Policzenie podstawowych statystyk opisowych dla zmiennych numerycznych
+
+```{r}
+daneNumeryczne <- dane[, sapply(dane, is.numeric)]
+summary(daneNumeryczne)
+```
+
+## Obróbka danych
+
+```{r}
+visdat::vis_dat(dane)
+```
+
+### Obróbka i przyjrzenie się danym o typie character
+
+Zmienne **Gender** oraz **Workout_Type** mają typ character, prawdopodobnie lepiej jest je zmienić na factor.
+
+Zacznę od płci :
+
+```{r}
+dane$Gender = as.factor(dane$Gender)
+```
+
+Dzięki tej zmianie możemy użyc funkcji summary do sprawdzenia, ile jest osób poszególnej płci w naszym zestawie danych.
+
+```{r}
+summary(dane$Gender)
+```
+
+Zwizualizuję to na wykresie słupkowym :
+
+```{r}
+ggplot(dane, aes(x=Gender, fill = Gender)) +
+  geom_bar()+
+  labs(x="Płeć", y="Ilość", fill = "Płeć") +
+  scale_x_discrete(labels = c("Female" = "Kobieta", "Male" = "Mężczyzna"))+
+  scale_fill_manual(values = c("Female" = "orange", "Male" = "lightblue"),
+                    labels = c("Female" = "Kobieta", "Male" = "Mężczyzna")) +
+  theme_minimal()
+```
+
+Przy okazji sprawdźmym jak to wygląda procentowo. Tworzę tablicę, która pokazuje, ile mamy kobiet oraz mężczyzn.
+
+```{r}
+table(dane$Gender)
+round((sum(dane$Gender == "Female")/973), 2)
+```
+
+Kobiety stanowią w zaokrągleniu **47%** próbki.
+
+Wracamy do obróbki...
+
+To samo dotyczy się zmiennej **Workout_Type** - sprawdzam, ile jest unikatowych typów treningów tym zestawie.
+
+```{r}
+unique(dane$Workout_Type)
+```
+
+Mamy rozróżnienie na **4 różne treningi** - myślę, że rozsądnym byłoby tu również zmienić typ zmiennej na factor.
+
+```{r}
+dane$Workout_Type = as.factor(dane$Workout_Type)
+```
+
+Ponownie używam funkcji `summary` do przyjrzenia się, ile jest danych typów treningów w zestawie.
+
+```{r}
+summary(dane$Workout_Type)
+```
+
+Wizualizacja typów treningu na wykresie słupkowym:
+
+```{r}
+ggplot(dane, aes(x=Workout_Type, fill = Workout_Type)) +
+  geom_bar()+
+  labs(x="Typ treningu", y="Ilość",fill = "") +
+  theme_minimal()
+```
+
+Pozostałe zmienne mają *typ numeryczny*.
+
+### Sprawdzenie wartości brakujących.
+
+```{r}
+md.pattern(dane, rotate.names = TRUE)
+```
+
+Zauważam również **brak wartośći NA**.
+
+### Zmiana nazw kolumn
+
+Zmieniam nazwy kolumn w celu ułatwienia ich wywoływania. (Usunięcie spacji i nawiasów)
+
+```{r}
+names(dane) <- c(
+  "Age", "Gender", "Weight_kg", "Height_m", 
+  "Max_BPM", "Avg_BPM", "Resting_BPM", "Session_Duration_hours", 
+  "Calories_Burned", "Workout_Type", "Fat_Percentage", "Water_Intake_liters", 
+  "Workout_Frequency_days_per_week", "Experience_Level", "BMI")
+```
+
+## Rozkład ludzi na siłowni
+
+### 1. Rozkład wiekowy
+
+Sprawdzę jak rozkłada się wiek użytkowników siłowni.
+
+W tym celu narysuję histogram z krzywą gęstości.
+
+```{r}
+ggplot(dane, aes(x = Age)) + 
+  geom_histogram(aes(y = after_stat(density)),
+                 colour = 1, fill = "white", bins = 12) +
+  geom_density(lwd = 1, colour = 4,
+               fill = 4, alpha = 0.25)+
+  labs(x="Wiek", y= "Gęstość")
+```
+
+Zauważmy, że rozkład wieku jest mniej więcej równy.
+
+Wyodrębnijmy podstawowe statystyki opsiowe dla wieku.
+
+```{r}
+summary(dane$Age)
+```
+
+Wnioski :
+
+-   Najmłodsza osoba w zbiorze ma **18 lat**, a najstarsza **59 lat**.
+
+-   **Mediana** wynosi **40 lat**, z tego wynika, że połowa osób w zbiorze ma równo lub mniej niż 40 lat, a druga połowa więcej lub równo.
+
+-   **Średnia** wynosi **38.68**, co sugeruje, że wiek jest rozkładem w miarę symetrycznym lub lekko przesuniętym w kierunku młodszych osób (średnia ma podobną wartość co mediana).
+
+-   **Pierwszy kwartyl (28 lat):** 25% osób w zbiorze ma **28 lat lub mniej**.
+
+-   **Trzeci kwartyl (49 lat):** 25% osób w zbiorze ma **49 lat lub więcej**.
+
+-   **IQR - Rozstęp między kwartylowy (Q3-Q1)**: Połowa osób znajduje się w przedziale wiekowym od **28 do 49 lat**.
+
+### 2. Rozkład masowy
+
+```{r}
+ggplot(dane, aes(x=Weight_kg)) +
+  geom_histogram (aes(y = after_stat(density)), fill = "lightgreen",color="black", bins = 10)+
+  geom_density(lwd = 1, colour = "black") +
+  geom_vline(aes(xintercept = mean(dane$Weight_kg)), linetype = "dashed", color = "red", linewidth = 1) +
+  labs(x= "Masa", y="Gęstość")+
+  theme_minimal()
+```
+
+**Wnioski**: Największy odstetek osób na siłowni waży **od 55 do 65 kg.** Zauważam **skośność prawostronną** (łagodniejszy "zjazd" z prawej strony wykresu), co oznacza, że mamy dużo obserwacji, które przyjmują wartości mniejsze od średniej (73.85 kg).
+
+### 3. Rozkład maksymalnego tętna
+
+Przywołam podstawowe statystyki dla maksymalnego tętna.
+
+```{r}
+summary(dane$Max_BPM)
+```
+
+Zwizualizuję na histogramie z krzywą gęstości rozkład maksymalnego tętna.
+
+```{r}
+ggplot(dane, aes(x=Max_BPM)) +
+  geom_histogram (aes(y = after_stat(density)), fill = "#FF474C",color="black", bins = 10)+
+  geom_density(lwd = 1, colour ="darkgrey",
+                alpha = 0.25) +
+  labs(x= "Maksymalne tętno", y="Gęstość")+
+  theme_minimal()
+
+```
+
+**Wnioski:** Największa liczba obserwacji (moda) występuje w przedziałach zbliżonych do wartości około 180 uderzeń na minutę, co sugeruje, że jest to najczęściej występująca wartość maksymalnego tętna w tym zbiorze danych. Wartości tętna poniżej 160 oraz powyżej 200 nie występują.
+
+## Macierz korelacji
+
+Wynik macierzy postaram się wykorzystać do sformułowania trafnych pytań badawczych w dalszej części pracy.
+
+```{r}
+cor <- cor(dane[, sapply(dane, is.numeric)])
+corrplot(cor, method = "square", type = "upper", tl.cex = 0.4, tl.col = "black",
+tl.srt = 90, addCoef.col = "black", number.cex = 0.6 )
+
+```
+
+**Obserwacje**:
+
+-   Widzę *zdecydowaną dodatnią korelację* między **częstotliwością treningu** a **poziomem doświadczenia**. Zbadam to dokładniej w późniejszej analizie
+
+-   Istnieje *silna dodatnia korelacja* między **BMI** a **Wagą**, co jest zgodne z definicją BMI, które zależy od wagi i wzrostu.
+
+-   Zauważam, że procent tkanki tłuszczowej *ujemnie koreluje* ze spożyciem wody, oraz częstotliowością treningów.
+
+-   Nietypową i zaskakującą obserwacją jest brak wyraźnej zależności pomiędzy wskaźnikiem masy ciała **(BMI)** a poziomem tkanki tłuszczowej **(Fat_Percentage)**.
+
+    Przyjrzę się temu na wykresie punktowym wraz z linią regresji :
+
+    ```{r message=FALSE}
+    ggplot(dane, aes(x = BMI, y = Fat_Percentage)) +
+      geom_point(color = "black") +
+      geom_smooth(method = "lm", color = "yellow", se=FALSE) +
+      labs(title = "Zależność między BMI a poziomem tkanki tłuszczowej",
+           x = "BMI", y = "Tkanka tłuszczowa (%)")+
+      theme_minimal()
+    ```
+
+    Faktycznie - już na etapie wykresu punkotwego zauważam brak wyraźnej zależności, jednak dla pewności sprawdzę ile wynosi wskaźnik R\^2 :
+
+    ```{r}
+    BMIvsFAT <- lm(Fat_Percentage ~ BMI, data = dane)
+    summary(BMIvsFAT)
+    ```
+
+Zauważam, że wartość **R\^2** jest równa prawie **0** to potwierdza **całkowity brak zależności** liniowej między tymi zmiennymi.
+
+## Pytania badawcze:
+
+1.  Jaki trening kobiety preferują najbardziej?
+
+2.  Jaki trening wybierają osoby z wysokim BMI?
+
+3.  Ile razy w tygodniu ćwiczą ludzie na siłwoni z podziałem na płeć?
+
+4.  Czy typ ćwiczeń wpływa na spalone na kalorie oraz spożycie wody podczas treningu?
+
+5.  Czy osoby bardziej doświadczone częściej trenują na siłowni?
+
+6.  Czy osoby wykonujące dłuższy trening spalają więcej kalorii na godzinę?
+
+7.  Czy osoby o dużym poziomie doświadczenia mają mniejszy procent tkanki tłuszczowej?
+
+8.  Czy wzrost wpływa na liczbę spalanych kalorii podczas treningu?
+
+9.  Czy wiek wpływa na częstotliwość treningów?
+
+10. Czy osoby starsze spalają mniej kalorii niż osoby młodsze?
+
+### Jaki trening kobiety preferują najbardziej?
+
+Zacznę od wizualizacji danych dotyczących preferencji treningowych z podziałem na płeć. Wykorzystam do tego wykres słupkowy.
+
+```{r}
+ggplot(dane, aes(x = Workout_Type, fill = Gender)) +
+  geom_bar(position = "stack", show.legend = TRUE) +
+  labs(title = "Popularność ćwiczeń według płci", x = "Rodzaj ćwiczeń", y = "Liczba klientów", fill = "Legenda") +
+    scale_fill_manual(values = c("Female" = "pink", "Male" = "lightblue"),
+                    labels = c("Female" = "Kobieta", "Male" = "Mężczyzna")) +
+  theme_minimal()
+```
+
+**Wnioski**: Na wykresie widać, że podział między kobietami a mężczyznami jest dość wyrównany. Zarówno kobiety, jak i mężczyźni wybierają podobne rodzaje ćwiczeń, bez wyraźnej przewagi którejś z płci. Szczerze mówiąc, spodziewałem się, że kobiety częściej będą wybierać treningi typu Cardio i Yogę, a rzadziej trening siłowy, natomiast mężczyźni odwrotnie – że postawią głównie na siłownię. Jak się okazało, myliłem się, ponieważ powyższy wykres słupkowy tego nie potwierdza.
+
+### Jaki trening wybierają osoby z wysokim BMI?
+
+Zacznijmy od narysowania wykresu ogólnego dla całego zbioru danych.
+
+```{r}
+ggplot(dane, aes(x = Workout_Type, y = BMI, color = Workout_Type)) +
+  geom_jitter() +
+  labs(title = "Wpływ BMI na częstotliwość wykonywanego treningu", x = "Rodzaj ćwiczeń", y = "BMI", color = "")+
+  theme_minimal()
+
+```
+
+Niestety z tego wykresu niewiele możemy się dowiedzięć o wyborach osób z wyższym BMI.
+
+Przyjrzę się danym bliżej.
+
+W związku z tym filtruję osoby z BMI większym niż 30.
+
+```{r}
+wysokie_bmi <- dane %>%
+  filter(BMI > 30)
+```
+
+Następnie tworzę wykres słupokwy z podziałem na rodzaj ćwiczeń :
+
+```{r}
+ggplot(wysokie_bmi, aes(x = Workout_Type)) +
+  geom_bar(aes(fill = Workout_Type), show.legend = FALSE) +
+  labs(title = "Popularność ćwiczeń wśród osób z wysokim BMI (BMI > 30)", 
+       x = "Rodzaj ćwiczeń", y = "Liczba osób", fill = "") +
+  theme_minimal()
+```
+
+Tworzę również tabele dla dokładniejszej analizy
+
+```{r}
+table(wysokie_bmi$Workout_Type)
+```
+
+**Wnioski:** Najpopularniejszym wyborem jest oczywiście trening ***Cardio***. Drugie miejsce zajmuję trening ***HIIT*** wraz z treningiem siłowym (***Strength***). Na ostatnim miejscu bez zaskoczeń znajduje się ***Yoga***. Spodziewałem się takich rezultatów - to dość logiczne, że osoby z wyższym BMI przychodzą na siłownię w celu schudnięcia, czyli wybiorą trening kardio.
+
+Czym jest *trening HIIT*?
+
+HIIT (z ang. High Intensity Interval Training) to trening interwałowy o wysokiej intensywności. Ten rodzaj treningu był opracowany specjalnie dla profesjonalnych sportowców i miał występować w postaci przygotowań przed zawodami. Obecnie jest stosowany też przez amatorów, ze względu szybszą redukcję tkanki tłuszczowej.
+
+Definicja doskonale tłumaczy dlaczego HIIT uplasował się aż na drugim miejscu.
+
+### Ile razy w tygodniu ćwiczą ludzie na siłwoni z podziałem na płeć?
+
+Zacznę od przyjrzenia się danym na wykresie słupkowym.
+
+```{r}
+ggplot(dane, aes(x = Workout_Frequency_days_per_week , fill = Gender)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Ile razy w tygodniu ćwiczą ludzie na siłowni z podziałem na płeć", 
+       x = "Liczba dni treningów w tygodniu",y = "Liczba osób",fill = "Płeć") +
+  scale_fill_manual(values = dane$Gender,
+                    labels = c("Female" = "Kobieta", "Male" = "Mężczyzna"))+
+  theme_classic()
+```
+
+**Wnioski** : Widzimy podobne rezulaty dla kobiet oraz mężczyzn.
+
+Najwięcej ludzi decyduje się na trening **3 razy w tygodniu,** drugim najczęstszym wyborem są 4 treningi.
+
+Zdecydowanie najmniej osób decyduje się na trening 5 razy w tygnodiu.
+
+```{r}
+min(dane$Workout_Frequency_days_per_week)
+```
+
+Zauważmy, że nikt z badanych nie chodzi mniej niż dwa razy w tygodniu. Wpływ na to może mieć stosunkowo mała próbka (zaledwie 973 rekordy).
+
+### Czy typ ćwiczeń wpływa na spalone na kalorie oraz spożycie wody podczas treningu?
+
+#### Dla spalonych kalorii:
+
+Sprawdzam podstawowe statystyki opisowe:
+
+```{r}
+dane %>% group_by(Workout_Type) %>% summarise(
+    Min = min(Calories_Burned),
+    Q1 = quantile(Calories_Burned, 0.25),
+    Mediana = median(Calories_Burned),
+    Średnia = mean(Calories_Burned),
+    Q3 = quantile(Calories_Burned, 0.75),
+    Max = max(Calories_Burned))
+
+```
+
+Sprawdzam dane na wykresie pudełkowym:
+
+```{r}
+ggplot(dane, aes(x=Workout_Type, y = Calories_Burned, fill = Workout_Type)) +
+   geom_boxplot() +
+  labs(x = "Typ treningu",y = "Spalone kalorie", fill = "") +
+  theme_minimal()  
+  
+  
+```
+
+**Wnioski** : Rozkłady wyglądają mniej więcej równie, jednak pojawiają się outliery. Najwięcej outlierów pojawia się przy treningu siłowym. Żaden nie pojawił się przy Yodzę. Na wykresie zadziwiający jest dla mnie rezultat dotyczący treningu kardio. Nie sądziłem, że będzie on na równo z pozostałymi.
+
+Natomiast analizując tabelę statystyk opisowych *HIIT wygrywa* pod względem efektywności spalania kalorii (najwyższa średnia oraz mediana). Z tego wynika, że jeżeli zależy nam na maksymalnym efekcie, warto rozważyć HIIT.
+
+#### Dla spożycia wody:
+
+Sparawdzamy podstawowe statystyki opisowe:
+
+```{r}
+dane %>% group_by(Workout_Type) %>% summarise(
+    Min_= min(Water_Intake_liters),
+    Q1 = quantile(Water_Intake_liters, 0.25),
+    Mediana = median(Water_Intake_liters),
+    Średnia = mean(Water_Intake_liters),
+    Q3 = quantile(Water_Intake_liters, 0.75),
+    Max = max(Water_Intake_liters))
+
+```
+
+Sprawdzam dane na wykresie pudełkowym :
+
+```{r}
+ggplot(dane, aes(x=Workout_Type, y = Water_Intake_liters, fill = Workout_Type)) +
+   geom_boxplot() +
+  labs(x = "Typ trenigu", y = "Spożycie wody") +
+  theme_minimal() 
+
+```
+
+**Wnioski :** Na podstawie tych danych widać, że typ ćwiczeń raczej nie wpływa mocno na to, ile wody pijemy podczas treningu, bo średnia dla wszystkich rodzajów ćwiczeń jest praktycznie taka sama – około 2.6 litra.
+
+Na wykresie pudełkowym zauważalne jest jednak, że przy HIIT spożycie wody najbardziej się różni między osobami (stosunkowo wysoka wartość IQR), co może oznaczać, że przy tym typie treningu trzeba bardziej indywidualnie podchodzić do nawodnienia – jedni potrzebują więcej, inni mniej.
+
+### Czy osoby bardziej doświadczone częściej trenują na siłowni?
+
+Zacznę od stworzenia tabeli, która pokazuje ile jest osób o danym poziomem doświadczenia.
+
+```{r}
+table(dane$Experience_Level) 
+```
+
+Średnia liczba sesji w tygodniu pod względem doświadczenia.
+
+```{r}
+(podsumowanie <- dane %>%
+  group_by(Experience_Level) %>%
+  summarise(ŚredniaLiczbaSesji = mean(Workout_Frequency_days_per_week)))
+
+```
+
+Zauważam tendencję wzrostową - wraz z poziomem doświadczenia rośnie średnia liczba sesji tygodniowych.
+
+Wizualizacja na wykresie.
+
+```{r}
+ggplot(podsumowanie, aes(x = as.factor(Experience_Level), y = ŚredniaLiczbaSesji, fill = as.factor(Experience_Level))) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Średnia liczba sesji tygodniowo dla poziomów doświadczenia",
+    x = "Poziom doświadczenia",
+    y = "Średnia liczba sesji tygodniowo",
+    fill ="Poziom doświadczenia"
+  ) +
+  theme_minimal()
+```
+
+**Wnioski:** Średnia liczba sesji ćwiczeniowych wzrasta wprost proporcjonalnie z poziomem doświadczenia. Większa liczba sesji tygodniowo u bardziej doświadczonych osób może wynikać z lepszego planowania treningów, większej regeneracji organizmu lub po prostu z pasji.
+
+### Czy osoby wykonujące dłuższy trening spalają więcej kalorii na godzinę?
+
+```{r message=FALSE, warning=FALSE}
+ggplot(dane, aes(x = Session_Duration_hours, y = Calories_Burned)) +
+  geom_point( color = "blue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(
+    title = "Związek między czasem trwania sesji a spalonymi kaloriami",
+    x = "Czas trwania sesji (h)",
+    y = "Spalone kalorie"
+  ) +
+  theme_minimal()
+```
+
+Na wykresie wyraźnie widać, że czas trawania ma bardzo znaczący wpływ na spalanie kalorii. Jak dokładny? Sprawdzę to licząc poziom zależności między tymi zmiennymi.
+
+Policzenie współczynnika **korelacji liniowej Pearsona**
+
+```{r}
+correlation <- cor(dane$Session_Duration_hours, dane$Calories_Burned, method = "pearson")
+round(correlation, 2)
+
+
+```
+
+**Wnioski:** Widzimy bardzo wysoką wartość **0.91**, co oznacza *silną dodatnią korelację* liniową między czasem trwania sesji a liczbą spalonych kalorii na godzinę. Z tego wynika, że wraz ze wzrostem czasu trwania sesji rośnie liczba spalonych kalorii na godzinę - co zdaje sie być całkiem logiczne.
+
+### Czy osoby o dużym poziomie doświadczenia mają mniejszy procent tkanki tłuszczowej?
+
+Zacznę od przedstawienia danych na *wykresach pudełkowych*.
+
+```{r}
+ggplot(dane, aes(x = as.factor(Experience_Level), y = Fat_Percentage)) +
+  geom_boxplot( fill = "lightblue", color = "black") +
+  labs(title = "Poziom doświadczenia a procent tkanki tłuszczowej",
+       x = "Poziom doświadczenia",
+       y = "Procent tkanki tłuszczowej") +
+  theme_minimal()
+```
+
+**Wnioski:** Zauważamy, że poziom doświadczenia wpływa na zmniejszenie procentu tkanki tłuszczowej. Jednak efekt ten jest zauważalny dopiero przy najwyższym poziomie doświadczenia.
+
+Sprawdzę jeszcze *wykresy skrzypcowe*, żeby sprawdzić zagęszczenie tej cechy.
+
+```{r}
+ggplot(dane, aes(x = as.factor(Experience_Level), y = Fat_Percentage)) +
+  geom_violin(trim = FALSE, fill = "lightgreen", color = "black")  +
+  labs(title = "Poziom doświadczenia a procent tkanki tłuszczowej",
+       x = "Poziom doświadczenia",
+       y = "Procent tkanki tłuszczowej") +
+  theme_minimal()
+```
+
+**Wnioski:** Widać wyraźnie, że przy najwyższym poziomie doświadczenia zagęszczenie cechy występuję niżej niż u pozostałych. To potwierdza nasze poprzednie wnioski. Dodatkowo w przypadku najwyższej rangi doświadczenia wykres skrzypcowy pokazuje delikatne wydłużenie w kierunku niższych wartości.
+
+### Czy wzrost wpływa na liczbę spalanych kalorii podczas treningu?
+
+Zacznę od narysowania wykresu punktowego z linią regresji.
+
+```{r message=FALSE, warning=FALSE}
+ggplot(dane, aes(x = Height_m, y = Calories_Burned)) +
+  geom_point(color="darkgrey") +
+  geom_smooth(method = "lm", color = "orange", se=FALSE) +
+  labs(title = "Zależność między wzrostem a liczbą spalanych kalorii",
+       x = "Wzrost (m)",
+       y = "Spalone kalorie") +
+  theme_minimal()
+```
+
+Wykres wraz z linią regresji nie wskazuje na jakąś znaczącą zależność, między tymi zmiennymi. Punkty są bardzo "porozrzucane".
+
+Dla pewności zbadam współczynnik korelacji liniowej Pearsona i sprawdzę ile wynosi jego wartość.
+
+```{r}
+round(cor(dane$Height_m, dane$Calories_Burned, method = "pearson"),2)
+```
+
+**Wnioski:** Współczynnik korelacji liniowej Pearsona wynosi w zaokrągleniu **0.09**. Wskazuje to na praktyczny **brak zależności między wzrostem osoby a liczbą spalonych kalorii podczas treningu.** Drobnym zdziwieniem dla mnie jest wynik badania - wzrost nie jest istotnym czynnikiem wpływającym na liczbę spalanych kalorii. Nie spodziewałem się rezultatów bliskim 1, jednak liczyłem na współczynnik o wartości co najmniej 0.50.
+
+### Czy wiek wpływa na częstotliwość treningów?
+
+```{r}
+ggplot(dane, aes(x=Age, y= as.factor(Workout_Frequency_days_per_week), color = Workout_Frequency_days_per_week)) +
+  geom_jitter() +
+  labs(x="Wiek", y= "Częstotliwość treningu", color = "Częstotliwość treningu")+
+  theme_minimal()
+```
+
+Wykres punktowy wskazuję na brak zależności. Zobaczę co pokazuje współczynnik korelacji.
+
+```{r}
+cor(dane$Age, dane$Workout_Frequency_days_per_week)
+```
+
+Współczynnik korelacji \~ 0
+
+**Wnioski:** Współczynnik korelacji w przybliżeniu wynosi 0. Ku mojemu zaskoczeniu zauważamy całkowity brak zależności między wiekiem a częstotliwością treningów. Osoby starsze są tak same zaangażowane jak młodsze. Wykres pokazuje również, że każda grupa wiekowa ma te same preferencje dotyczące liczby treningów w tygodniu.
+
+### Czy osoby starsze spalają mniej kalorii niż osoby młodsze?
+
+Rozpoczynam od podziału wieku na grupy i wizualizacji danych na wykresie krzywej gęstości.
+
+```{r}
+podzialWieku <- ifelse(dane$Age < 40, "Młodsi", "Starsi")
+
+ggplot(dane, aes(x = Calories_Burned, fill = podzialWieku)) +
+  geom_density(alpha = 0.6) +
+  labs(title = "Krzywe gęstości spalania kalorii dla poszczególnych grup wiekowych",x = "Spalone kalorie", y = "Gęstość", fill = "Grupa wiekowa") +
+  theme_minimal()
+```
+
+Policzenie średnich :
+
+```{r}
+tapply(dane$Calories_Burned, podzialWieku, mean)
+
+```
+
+Dokonałem podziału na młodszych i strarszych (\>40). Wybrałem 40 lat, ponieważ dokładnie tyle wynosi mediana wieku w całym zbiorze.
+
+**Wnioski:** Na przedstawionym powyżej wykresie krzywej gęstości dla obu grup wiekowych oraz użytej funkcji `tapply` jestem w stanie stwierdzić, że ludzie młodsi średnio spalają więcej kalorii niż osoby starsze. Rozkład dla młodszych jest mniej skoncentrowany i rozkłada się na więcej wartości. Dodatkowo widzimy, że te skrajne wartości prawostronne należą w większości do młodszej grupy wiekowej. Sugeruje to nam, że ludzie w wieku większym niż 40 lat raczej nie prefereują treningów ekstremalnych. Zdecydowanie bardziej wolą oni zrównoważony trening.
+
+## Podsumowanie
+
+Wykonana przeze mnie analiza danych członków siłowni pozwala na uzyskanie kilku znaczących wniosków w temacie użytkowników, ich preferencji treningowych oraz korelacji.
+
+Przywołam teraz te najistonijesze:
+
+-   Demografia:
+
+    -   Najliczniejszą grupę na siłowni stanowią osoby w wieku 25-34 lata.
+
+    -   Największy odstetek osób na siłowni waży od 55 do 65 kg.
+
+    -   Kobiety stanowią 47% próbki, co sugeruje o równym zainsteresowaniem dla obu płci.
+
+-   Preferencje
+
+    -   Podział między kobietami a mężczyznami jest dość wyrównany, jeżeli chodzi o wybór typu treningu.
+
+    -   Najpopularniejszym wyborem osób z wysokim BMI (\>30) jest trening kardio.
+
+    -   Najwięcej ludzi decyduje się na trening 3 razy w tygodniu.
+
+    -   Wybór treningu *HIIT* wygrywa pod względem efektywności spalania kalorii.
+
+-   Analizy
+
+    -   Średnia liczba sesji ćwiczeniowych wzrasta wprost proporcjonalnie z poziomem doświadczenia.
+
+    -   Wraz ze wzrostem czasu trwania sesji rośnie liczba spalonych kalorii na godzinę.
+
+    -   Poziom doświadczenia koreluje ujemenie z % tkanki tłuszczowej. Wzrost doświadczenia oznacza spadek % tkanki tłuszczowej.
+
+    -   Ludzie młodsi średnio spalają więcej kalorii niż osoby starsze.
