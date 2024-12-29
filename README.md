@@ -16,5 +16,7 @@ This project involves an **Exploratory Data Analysis (EDA)** of a dataset relate
 
 ## How to Use
 
-1. Open the `GymMembersEDA.html` file in a web browser to view the report.
-2. Explore the visualizations and findings to gain insights into the dataset.
+1. Open the `GymMembersEDA.md` file on GitHub to view the report.
+2. Alternatively, open the `GymMembersEDA.html` file in a web browser for a more visually enhanced version of the report.
+3. Review the visualizations and findings to gain valuable insights from the dataset.
+ 
